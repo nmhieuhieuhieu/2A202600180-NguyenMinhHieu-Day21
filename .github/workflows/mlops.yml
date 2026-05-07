@@ -137,6 +137,7 @@ jobs:
 
       - name: Upload safe model to Cloud Storage
         run: |
+          pip install google-cloud-storage
           python - <<'EOF'
           import os
           from google.cloud import storage
