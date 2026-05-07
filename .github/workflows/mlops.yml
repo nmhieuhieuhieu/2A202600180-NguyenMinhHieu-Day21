@@ -35,6 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       accuracy: ${{ steps.read_metrics.outputs.accuracy }}
+      old_accuracy: ${{ steps.read_old_metrics.outputs.old_accuracy }}
 
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +57,34 @@ jobs:
           dvc remote modify myremote credentialpath --unset
           dvc pull data/train_phase1.csv data/eval.csv
 
+      - name: Download old metrics (Bonus 4)
+        id: read_old_metrics
+        run: |
+          python - <<'EOF'
+          import os, json
+          from google.cloud import storage
+          try:
+              client = storage.Client()
+              bucket = client.bucket('${{ secrets.CLOUD_BUCKET }}')
+              blob = bucket.blob("models/latest/metrics.json")
+              if blob.exists():
+                  blob.download_to_filename("old_metrics.json")
+                  with open("old_metrics.json") as f:
+                      d = json.load(f)
+                      old_acc = d.get("accuracy", 0.0)
+                  print(f"Old accuracy found: {old_acc}")
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                      print(f"old_accuracy={old_acc}", file=fh)
+              else:
+                  print("No old metrics found.")
+                  with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                      print(f"old_accuracy=0.0", file=fh)
+          except Exception as e:
+              print(f"Warning: {e}")
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as fh:
+                  print(f"old_accuracy=0.0", file=fh)
+          EOF
+
       - name: Train model
         run: python src/train.py
 
@@ -65,7 +94,48 @@ jobs:
           ACC=$(python -c "import json; d=json.load(open('outputs/metrics.json')); print(d['accuracy'])")
           echo "accuracy=$ACC" >> $GITHUB_OUTPUT
 
-      - name: Upload model to Cloud Storage
+      - name: Save metrics and model as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ml_artifacts
+          path: |
+            outputs/
+            models/
+
+  # JOB 3: Kiem tra chat luong va Safe Deploy
+  eval:
+    name: Eval
+    needs: train
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check eval gate & Rollback (Bonus 4)
+        run: |
+          python - <<'EOF'
+          new_acc = float("${{ needs.train.outputs.accuracy }}")
+          old_acc = float("${{ needs.train.outputs.old_accuracy }}")
+          
+          print(f"New accuracy: {new_acc:.4f}, Old accuracy: {old_acc:.4f}")
+          
+          if new_acc < 0.65:
+              raise SystemExit(f"FAILED: accuracy {new_acc:.4f} < 0.65. Huy deploy.")
+              
+          if new_acc < old_acc:
+              raise SystemExit(f"FAILED (ROLLBACK): New accuracy {new_acc:.4f} is lower than old accuracy {old_acc:.4f}. Huy deploy.")
+              
+          print(f"PASSED: accuracy {new_acc:.4f} >= 0.65 AND >= old_acc {old_acc:.4f}. Dang trien khai model.")
+          EOF
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: '${{ secrets.CLOUD_CREDENTIALS }}'
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ml_artifacts
+
+      - name: Upload safe model to Cloud Storage
         run: |
           python - <<'EOF'
           import os
@@ -73,30 +143,16 @@ jobs:
           
           client = storage.Client()
           bucket = client.bucket('${{ secrets.CLOUD_BUCKET }}')
-          blob = bucket.blob("models/latest/model.pkl")
-          blob.upload_from_filename("models/model.pkl")
-          print("Model uploaded successfully.")
-          EOF
-
-      - name: Save metrics as artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: metrics
-          path: outputs/metrics.json
-
-  # JOB 3: Kiem tra chat luong
-  eval:
-    name: Eval
-    needs: train
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check eval gate
-        run: |
-          python - <<'EOF'
-          acc = float("${{ needs.train.outputs.accuracy }}")
-          if acc < 0.65:
-              raise SystemExit(f"FAILED: accuracy {acc:.4f} < 0.65. Huy deploy.")
-          print(f"PASSED: accuracy {acc:.4f} >= 0.65. Dang trien khai model.")
+          
+          # Upload model
+          blob_model = bucket.blob("models/latest/model.pkl")
+          blob_model.upload_from_filename("models/model.pkl")
+          
+          # Upload metrics
+          blob_metrics = bucket.blob("models/latest/metrics.json")
+          blob_metrics.upload_from_filename("outputs/metrics.json")
+          
+          print("Model and metrics safely uploaded to GCS.")
           EOF
 
   # JOB 4: Trien khai sau khi eval gate qua
