@@ -147,24 +147,9 @@ jobs:
 
       - name: Upload safe model to Cloud Storage
         run: |
-          python3 -m pip install google-cloud-storage
-          python3 - <<'EOF'
-          import os
-          from google.cloud import storage
-          
-          client = storage.Client()
-          bucket = client.bucket('${{ secrets.CLOUD_BUCKET }}')
-          
-          # Upload model
-          blob_model = bucket.blob("models/latest/model.pkl")
-          blob_model.upload_from_filename("models/model.pkl")
-          
-          # Upload metrics
-          blob_metrics = bucket.blob("models/latest/metrics.json")
-          blob_metrics.upload_from_filename("outputs/metrics.json")
-          
-          print("Model and metrics safely uploaded to GCS.")
-          EOF
+          gcloud storage cp models/model.pkl gs://${{ secrets.CLOUD_BUCKET }}/models/latest/model.pkl
+          gcloud storage cp outputs/metrics.json gs://${{ secrets.CLOUD_BUCKET }}/models/latest/metrics.json
+          echo "Model and metrics safely uploaded to GCS."
 
   # JOB 4: Trien khai sau khi eval gate qua
   deploy:
