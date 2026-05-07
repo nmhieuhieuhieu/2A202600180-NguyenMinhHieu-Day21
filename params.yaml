@@ -1,3 +1,4 @@
-model_type: logistic_regression
-C: 1.0
-max_iter: 1000
+model_type: random_forest
+n_estimators: 1000
+max_depth: 40
+min_samples_split: 2
