@@ -23,7 +23,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python3 -m pip install -r requirements.txt
 
       - name: Run tests
         run: pytest tests/ -v
@@ -45,7 +45,7 @@ jobs:
           python-version: "3.10"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python3 -m pip install -r requirements.txt
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -60,7 +60,8 @@ jobs:
       - name: Download old metrics (Bonus 4)
         id: read_old_metrics
         run: |
-          python - <<'EOF'
+          python3 -m pip install google-cloud-storage
+          python3 - <<'EOF'
           import os, json
           from google.cloud import storage
           try:
@@ -86,12 +87,12 @@ jobs:
           EOF
 
       - name: Train model
-        run: python src/train.py
+        run: python3 src/train.py
 
       - name: Read metrics
         id: read_metrics
         run: |
-          ACC=$(python -c "import json; d=json.load(open('outputs/metrics.json')); print(d['accuracy'])")
+          ACC=$(python3 -c "import json; d=json.load(open('outputs/metrics.json')); print(d['accuracy'])")
           echo "accuracy=$ACC" >> $GITHUB_OUTPUT
 
       - name: Save metrics and model as artifact
@@ -116,7 +117,7 @@ jobs:
 
       - name: Check eval gate & Rollback (Bonus 4)
         run: |
-          python - <<'EOF'
+          python3 - <<'EOF'
           new_acc = float("${{ needs.train.outputs.accuracy }}")
           old_acc = float("${{ needs.train.outputs.old_accuracy }}")
           
@@ -143,8 +144,8 @@ jobs:
 
       - name: Upload safe model to Cloud Storage
         run: |
-          pip install google-cloud-storage
-          python - <<'EOF'
+          python3 -m pip install google-cloud-storage
+          python3 - <<'EOF'
           import os
           from google.cloud import storage
           
