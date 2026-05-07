@@ -7,7 +7,7 @@ import joblib
 import os
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 
 EVAL_THRESHOLD = 0.65
 
@@ -63,6 +63,16 @@ def train(
         else:
             raise ValueError(f"Unsupported model_type: {model_type}")
 
+        # Bonus 5: Cảnh Báo Lệch Lạc Dữ Liệu
+        dist = y_train.value_counts(normalize=True).to_dict()
+        label_distribution = {str(k): v for k, v in dist.items()}
+        print("\n--- Phân Phối Dữ Liệu Huấn Luyện (Bonus 5) ---")
+        for label, pct in dist.items():
+            print(f"Lớp {label}: {pct:.2%}")
+            if pct < 0.10:
+                print(f"WARNING: Lớp {label} chiếm ít hơn 10% tổng số mẫu! Có khả năng lệch dữ liệu.")
+        print("----------------------------------------------\n")
+
         model.fit(X_train, y_train)
 
         # 1.5.6: Tính accuracy và f1_score trên tập đánh giá.
@@ -81,9 +91,25 @@ def train(
         print(f"Accuracy: {acc:.4f} | F1: {f1:.4f}")
 
         # 1.5.10: Lưu metrics ra file outputs/metrics.json.
+        # Bonus 3: Báo Cáo Hiệu Suất Tự Động
+        report = classification_report(y_eval, preds, digits=4)
+        cm = confusion_matrix(y_eval, preds)
+        
+        print("\n--- Báo cáo Hiệu Suất (Bonus 3) ---")
+        print("Confusion Matrix:\n", cm)
+        print("\nClassification Report:\n", report)
+        print("-----------------------------------\n")
+
         os.makedirs("outputs", exist_ok=True)
+        with open("outputs/report.txt", "w") as f:
+            f.write("Confusion Matrix:\n")
+            f.write(str(cm) + "\n\n")
+            f.write("Classification Report:\n")
+            f.write(report)
+
+        # 1.5.10: Lưu metrics ra file outputs/metrics.json.
         with open("outputs/metrics.json", "w") as f:
-            json.dump({"accuracy": acc, "f1_score": f1}, f)
+            json.dump({"accuracy": acc, "f1_score": f1, "label_distribution": label_distribution}, f)
 
         # 1.5.11: Lưu mô hình ra file models/model.pkl.
         os.makedirs("models", exist_ok=True)
